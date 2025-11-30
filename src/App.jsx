@@ -78,7 +78,7 @@ const Login = ({ onLogin, error }) => {
               type="text"
               required
               className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-              placeholder="e.g. little_toes_baheer"
+              placeholder="e.g. your username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
@@ -109,9 +109,6 @@ const Login = ({ onLogin, error }) => {
             Sign In
           </button>
         </form>
-        <div className="mt-6 text-center text-xs text-slate-400">
-          Demo: little_toes_baheer / 1234
-        </div>
       </div>
     </div>
   );
@@ -125,7 +122,8 @@ const Dashboard = ({ user, onLogout }) => {
   // Date State
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days ago
-    end: new Date().toISOString().split('T')[0] // Today
+    // Add 24 hours (24 * 60 * 60 * 1000 milliseconds) to current time
+    end: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0] 
   });
 
   // 1. Fetch Data from Supabase
@@ -135,27 +133,47 @@ const Dashboard = ({ user, onLogout }) => {
       setFetchError('');
 
       try {
-        let data = [];
+        let allData = [];
         
         if (supabase) {
-          // --- REAL SUPABASE FETCH ---
-          const { data: supabaseData, error } = await supabase
-            .from('Orders')
-            .select('*')
-            .eq('subscriber_name', user); // Filter by logged in user
+          // --- REAL SUPABASE FETCH (Recursive / Chunked) ---
+          const PAGE_SIZE = 1000; // Max allowed by Supabase default
+          let page = 0;
+          let hasMore = true;
 
-          if (error) throw error;
-          data = supabaseData || [];
+          while (hasMore) {
+            // Fetch the next batch
+            const { data: batch, error } = await supabase
+              .from('Orders')
+              .select('*')
+              .eq('subscriber_name', user)
+              .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+            if (error) throw error;
+
+            if (batch.length > 0) {
+              // Add batch to our total list
+              allData = [...allData, ...batch];
+              
+              // If we got fewer rows than requested, we've reached the end
+              if (batch.length < PAGE_SIZE) {
+                hasMore = false;
+              } else {
+                page++; // Prepare for next loop
+              }
+            } else {
+              hasMore = false; // No data returned
+            }
+          }
+
         } else {
           // --- FALLBACK MOCK FETCH ---
           console.warn("Using Mock Data (Supabase keys missing)");
-          // Simulate network delay
           await new Promise(resolve => setTimeout(resolve, 800));
-          // Use MOCK_DATA here
-          data = MOCK_DATA.filter(o => o.subscriber_name === user);
+          allData = MOCK_DATA.filter(o => o.subscriber_name === user);
         }
 
-        setOrders(data);
+        setOrders(allData);
       } catch (err) {
         console.error("Fetch error:", err);
         setFetchError('Failed to load orders. Please check your connection.');
