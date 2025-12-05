@@ -196,25 +196,26 @@ const Dashboard = ({ user, onLogout }) => {
   }, [orders, isAdmin]);
 
   // 3. Filter Data in Memory
-  const filteredData = useMemo(() => {
-    const start = new Date(dateRange.start);
-    const end = new Date(dateRange.end);
-    end.setHours(23, 59, 59, 999);
+    const filteredData = useMemo(() => {
+      // FIX: Append time to force Local Timezone parsing
+      // This fixes the issue where orders between 00:00 and 02:00 (Cairo) were hidden
+      const start = new Date(dateRange.start + 'T00:00:00');
+      const end = new Date(dateRange.end + 'T23:59:59.999');
 
-    return orders.filter(order => {
-      // Date Filter
-      const orderDate = new Date(order.created_at);
-      const inDateRange = orderDate >= start && orderDate <= end;
-      
-      // Subscriber Filter (Admin Only)
-      const matchesSubscriber = 
-        !isAdmin || 
-        subscriberFilter === 'All' || 
-        order.subscriber_name === subscriberFilter;
+      return orders.filter(order => {
+        // Date Filter
+        const orderDate = new Date(order.created_at);
+        const inDateRange = orderDate >= start && orderDate <= end;
+        
+        // Subscriber Filter (Admin Only)
+        const matchesSubscriber = 
+          !isAdmin || 
+          subscriberFilter === 'All' || 
+          order.subscriber_name === subscriberFilter;
 
-      return inDateRange && matchesSubscriber;
-    });
-  }, [orders, dateRange, subscriberFilter, isAdmin]);
+        return inDateRange && matchesSubscriber;
+      });
+    }, [orders, dateRange, subscriberFilter, isAdmin]);
 
   // 4. Calculate Stats
   const stats = useMemo(() => {
