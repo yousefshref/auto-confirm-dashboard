@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // ⚠️ NOTE: To use this in your local project:
-// 1. Run: npm install @supabase/supabase-js
+// 1. Run: npm install @supabase/supabase-js recharts lucide-react
 // 2. Uncomment the import below:
 // import { createClient } from '@supabase/supabase-js';
-// ... existing imports
+
+// If you have a separate file for client, import it here:
 import { supabase } from './supabaseClient'
 
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { 
-  LayoutDashboard, LogOut, Calendar, Package, AlertCircle, CheckCircle, Clock, Bell, Loader2, XCircle, Users, Filter
+  LayoutDashboard, LogOut, Calendar, Package, AlertCircle, CheckCircle, Clock, Bell, Loader2, XCircle, Users, Filter, Activity
 } from 'lucide-react';
 
 // ==========================================
@@ -23,6 +24,10 @@ import {
 //   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
 //   : null;
 
+// For the sake of this single-file demo, we set supabase to null to force Mock Mode
+// If you have the client imported, remove this line:
+// const supabase = null; 
+
 // ==========================================
 // 🧪 MOCK DATA (FALLBACK)
 // ==========================================
@@ -33,6 +38,7 @@ const MOCK_DATA = [
   { id: 35, subscriber_name: 'netaq_aljamal', order_id: '6208391577782', phone: '201111035622', status: 'PENDING', created_at: '2025-11-28T21:45:00.000Z' },
   { id: 36, subscriber_name: 'little_toes_baheer', order_id: '7499213111999', phone: '201223130999', status: 'PENDING', created_at: new Date().toISOString() },
   { id: 37, subscriber_name: 'different_store', order_id: '7499213555555', phone: '201005555555', status: 'CANCELLED', created_at: new Date().toISOString() },
+  { id: 38, subscriber_name: 'little_toes_baheer', order_id: '7499213888888', phone: '201223130888', status: 'CONFIRMED', created_at: new Date().toISOString() },
 ];
 
 // --- UI COMPONENTS ---
@@ -197,8 +203,7 @@ const Dashboard = ({ user, onLogout }) => {
 
   // 3. Filter Data in Memory
     const filteredData = useMemo(() => {
-      // FIX: Append time to force Local Timezone parsing
-      // This fixes the issue where orders between 00:00 and 02:00 (Cairo) were hidden
+      // Append time to force Local Timezone parsing
       const start = new Date(dateRange.start + 'T00:00:00');
       const end = new Date(dateRange.end + 'T23:59:59.999');
 
@@ -231,7 +236,12 @@ const Dashboard = ({ user, onLogout }) => {
     }, { total: 0, pending: 0, escalated: 0, confirmed: 0, reminded: 0, cancelled: 0 });
   }, [filteredData]);
 
-  // 5. Chart Data
+  // 5. Calculate Confirmation Rate
+  const confirmationRate = stats.total > 0 
+    ? ((stats.confirmed / stats.total) * 100).toFixed(1) 
+    : '0.0';
+
+  // 6. Chart Data
   const chartData = [
     { name: 'Pending', value: stats.pending, color: '#f59e0b' },
     { name: 'Escalated', value: stats.escalated, color: '#ef4444' },
@@ -286,7 +296,7 @@ const Dashboard = ({ user, onLogout }) => {
             <AlertCircle className="text-amber-600 mt-1 flex-shrink-0" size={20} />
             <div>
               <h4 className="font-bold text-amber-800 text-sm">Mock Mode</h4>
-              <p className="text-amber-700 text-xs mt-1">Supabase keys missing.</p>
+              <p className="text-amber-700 text-xs mt-1">Supabase keys missing. Using static test data.</p>
             </div>
           </div>
         )}
@@ -342,14 +352,36 @@ const Dashboard = ({ user, onLogout }) => {
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6 mb-8">
-          <Card title="Total" value={stats.total} icon={Package} colorClass="bg-slate-100 text-slate-600" />
-          <Card title="Pending" value={stats.pending} icon={Clock} colorClass="bg-amber-100 text-amber-600" />
-          <Card title="Escalated" value={stats.escalated} icon={AlertCircle} colorClass="bg-red-100 text-red-600" />
+        {/* Stats Grid - 7 Items */}
+        {/* Adjusted grid-cols to fit 4 on top, 3 on bottom for large screens */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+          
+          {/* 1. Total (Gray) */}
+          <Card title="Total Orders" value={stats.total} icon={Package} colorClass="bg-slate-100 text-slate-600" />
+          
+          {/* 2. Rate (Violet - NEW) */}
+          <Card 
+            title="Confirmation Rate" 
+            value={`${confirmationRate}%`} 
+            icon={Activity} 
+            colorClass="bg-violet-100 text-violet-600" 
+          />
+
+          {/* 3. Confirmed (Green) */}
           <Card title="Confirmed" value={stats.confirmed} icon={CheckCircle} colorClass="bg-green-100 text-green-600" />
+
+          {/* 4. Pending (Amber) */}
+          <Card title="Pending" value={stats.pending} icon={Clock} colorClass="bg-amber-100 text-amber-600" />
+
+          {/* 5. Reminded (Blue) */}
           <Card title="Reminded" value={stats.reminded} icon={Bell} colorClass="bg-blue-100 text-blue-600" />
+
+          {/* 6. Escalated (Red) */}
+          <Card title="Escalated" value={stats.escalated} icon={AlertCircle} colorClass="bg-red-100 text-red-600" />
+
+          {/* 7. Cancelled (Slate) */}
           <Card title="Cancelled" value={stats.cancelled} icon={XCircle} colorClass="bg-slate-200 text-slate-600" />
+          
         </div>
 
         {/* Charts */}
@@ -452,7 +484,7 @@ const Dashboard = ({ user, onLogout }) => {
                                         order.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600 border-slate-200' :
                                         'bg-amber-50 text-amber-600 border-amber-200'
                                       }`}>
-                                      {order.status}
+                                        {order.status}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-slate-600 font-medium">{order.phone}</td>
