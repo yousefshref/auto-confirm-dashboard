@@ -11,7 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { 
-  LayoutDashboard, LogOut, Calendar, Package, AlertCircle, CheckCircle, Clock, Bell, Loader2, XCircle, Users, Filter, Activity
+  LayoutDashboard, LogOut, Calendar, Package, AlertCircle, CheckCircle, Clock, Bell, Loader2, XCircle, Users, Filter, Activity, Wallet, AlertTriangle
 } from 'lucide-react';
 
 // ==========================================
@@ -24,9 +24,7 @@ import {
 //   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
 //   : null;
 
-// For the sake of this single-file demo, we set supabase to null to force Mock Mode
-// If you have the client imported, remove this line:
-// const supabase = null; 
+// const supabase = null; // Mock Mode
 
 // ==========================================
 // 🧪 MOCK DATA (FALLBACK)
@@ -39,6 +37,13 @@ const MOCK_DATA = [
   { id: 36, subscriber_name: 'little_toes_baheer', order_id: '7499213111999', phone: '201223130999', status: 'PENDING', created_at: new Date().toISOString() },
   { id: 37, subscriber_name: 'different_store', order_id: '7499213555555', phone: '201005555555', status: 'CANCELLED', created_at: new Date().toISOString() },
   { id: 38, subscriber_name: 'little_toes_baheer', order_id: '7499213888888', phone: '201223130888', status: 'CONFIRMED', created_at: new Date().toISOString() },
+];
+
+// New Mock Wallets Table
+const MOCK_WALLETS = [
+  { id: 1, subscriber: 'little_toes_baheer', wallet: 45 }, // Low balance test case
+  { id: 2, subscriber: 'netaq_aljamal', wallet: 1250 },
+  { id: 3, subscriber: 'different_store', wallet: 500 },
 ];
 
 // --- UI COMPONENTS ---
@@ -121,6 +126,7 @@ const Login = ({ onLogin, error }) => {
 const Dashboard = ({ user, onLogout }) => {
   const isAdmin = user === 'admin';
   const [orders, setOrders] = useState([]);
+  const [walletBalance, setWalletBalance] = useState(null); // New State
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
   
@@ -131,15 +137,17 @@ const Dashboard = ({ user, onLogout }) => {
     end: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0] 
   });
 
-  // 1. Fetch Data
+  // 1. Fetch Data (Orders & Wallet)
   useEffect(() => {
-    const fetchOrders = async () => {
+    const fetchAllData = async () => {
       setLoading(true);
       setFetchError('');
 
       try {
-        let allData = [];
+        let allOrders = [];
+        let walletAmount = 0;
         
+        // --- 1. FETCH ORDERS ---
         if (supabase) {
           const PAGE_SIZE = 1000;
           let page = 0;
@@ -151,7 +159,6 @@ const Dashboard = ({ user, onLogout }) => {
               .select('*')
               .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
             
-            // IF NOT ADMIN, FILTER BY SUBSCRIBER NAME
             if (!isAdmin) {
               query = query.eq('subscriber_name', user);
             }
@@ -161,7 +168,7 @@ const Dashboard = ({ user, onLogout }) => {
             if (error) throw error;
 
             if (batch.length > 0) {
-              allData = [...allData, ...batch];
+              allOrders = [...allOrders, ...batch];
               if (batch.length < PAGE_SIZE) hasMore = false;
               else page++;
             } else {
@@ -169,50 +176,71 @@ const Dashboard = ({ user, onLogout }) => {
             }
           }
 
+          // --- 2. FETCH WALLET ---
+          // Logic: Get row from 'wallets' where subscriber == user
+          if (!isAdmin) {
+            const { data: walletData, error: walletError } = await supabase
+                .from('wallets')
+                .select('wallet')
+                .eq('subscriber', user)
+                .single();
+            
+            if (!walletError && walletData) {
+                walletAmount = walletData.wallet;
+            }
+          }
+
         } else {
           // --- MOCK MODE ---
           console.warn("Using Mock Data");
           await new Promise(resolve => setTimeout(resolve, 800));
+          
+          // Orders
           if (isAdmin) {
-             allData = MOCK_DATA; // Admin sees all
+             allOrders = MOCK_DATA; 
           } else {
-             allData = MOCK_DATA.filter(o => o.subscriber_name === user); // User sees theirs
+             allOrders = MOCK_DATA.filter(o => o.subscriber_name === user);
+          }
+
+          // Wallet
+          const mockWalletRow = MOCK_WALLETS.find(w => w.subscriber === user);
+          if (mockWalletRow) {
+            walletAmount = mockWalletRow.wallet;
           }
         }
 
-        setOrders(allData);
+        setOrders(allOrders);
+        setWalletBalance(walletAmount);
+
       } catch (err) {
         console.error("Fetch error:", err);
-        setFetchError('Failed to load orders.');
+        setFetchError('Failed to load data.');
       } finally {
         setLoading(false);
       }
     };
 
     if (user) {
-      fetchOrders();
+      fetchAllData();
     }
   }, [user, isAdmin]);
 
-  // 2. Derive Unique Subscribers for Filter Dropdown (Admin Only)
+  // 2. Derive Unique Subscribers (Admin Only)
   const uniqueSubscribers = useMemo(() => {
     if (!isAdmin) return [];
     const names = orders.map(o => o.subscriber_name);
     return [...new Set(names)].sort();
   }, [orders, isAdmin]);
 
-  // 3. Filter Data in Memory
+  // 3. Filter Data
     const filteredData = useMemo(() => {
-      // Append time to force Local Timezone parsing
       const start = new Date(dateRange.start + 'T00:00:00');
       const end = new Date(dateRange.end + 'T23:59:59.999');
 
       return orders.filter(order => {
-        // Date Filter
         const orderDate = new Date(order.created_at);
         const inDateRange = orderDate >= start && orderDate <= end;
         
-        // Subscriber Filter (Admin Only)
         const matchesSubscriber = 
           !isAdmin || 
           subscriberFilter === 'All' || 
@@ -236,7 +264,7 @@ const Dashboard = ({ user, onLogout }) => {
     }, { total: 0, pending: 0, escalated: 0, confirmed: 0, reminded: 0, cancelled: 0 });
   }, [filteredData]);
 
-  // 5. Calculate Confirmation Rate
+  // 5. Confirmation Rate
   const confirmationRate = stats.total > 0 
     ? ((stats.confirmed / stats.total) * 100).toFixed(1) 
     : '0.0';
@@ -250,6 +278,8 @@ const Dashboard = ({ user, onLogout }) => {
     { name: 'Cancelled', value: stats.cancelled, color: '#64748b' },
   ];
 
+  const isLowBalance = walletBalance !== null && walletBalance < 50;
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 flex-col gap-4">
@@ -262,8 +292,10 @@ const Dashboard = ({ user, onLogout }) => {
   return (
     <div className="min-h-screen bg-slate-50 pb-12">
       {/* Top Navigation */}
-      <nav className={`${isAdmin ? 'bg-slate-800' : 'bg-white'} border-b border-slate-200 px-4 md:px-8 py-4 flex justify-between items-center sticky top-0 z-20 shadow-sm transition-colors`}>
-        <div className="flex items-center gap-3">
+      <nav className={`${isAdmin ? 'bg-slate-800' : 'bg-white'} border-b border-slate-200 px-4 md:px-8 py-4 flex flex-col md:flex-row gap-4 justify-between items-center sticky top-0 z-20 shadow-sm transition-colors`}>
+        
+        {/* Left Side: Logo & Title */}
+        <div className="flex items-center gap-3 w-full md:w-auto">
           <div className={`${isAdmin ? 'bg-indigo-500' : 'bg-indigo-600'} p-2 rounded-lg shadow-md`}>
             {isAdmin ? <Users className="text-white" size={20} /> : <LayoutDashboard className="text-white" size={20} />}
           </div>
@@ -276,17 +308,40 @@ const Dashboard = ({ user, onLogout }) => {
             </p>
           </div>
         </div>
-        <button 
-          onClick={onLogout}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all text-sm font-medium border border-transparent
-            ${isAdmin 
-              ? 'text-slate-300 hover:text-white hover:bg-slate-700' 
-              : 'text-slate-600 hover:text-red-600 hover:bg-red-50 hover:border-red-100'
-            }`}
-        >
-          <LogOut size={18} />
-          <span className="hidden md:inline">Logout</span>
-        </button>
+
+        {/* Right Side: Wallet & Logout */}
+        <div className="flex items-center gap-3 md:gap-4 w-full md:w-auto justify-end">
+          
+          {/* 💰 WALLET WIDGET (Visible if not admin and balance exists) */}
+          {!isAdmin && walletBalance !== null && (
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border shadow-sm transition-all
+              ${isLowBalance 
+                ? 'bg-red-50 border-red-200 text-red-700 animate-pulse' 
+                : 'bg-slate-50 border-slate-200 text-slate-700'
+              }`}
+            >
+              {isLowBalance ? <AlertTriangle size={18} /> : <Wallet size={18} />}
+              <div className="flex flex-col items-end leading-none">
+                <span className="text-[10px] font-bold opacity-70 uppercase tracking-wider">Balance</span>
+                <span className="font-bold font-mono text-base">
+                  {walletBalance} <span className="text-xs">EGP</span>
+                </span>
+              </div>
+            </div>
+          )}
+
+          <button 
+            onClick={onLogout}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all text-sm font-medium border border-transparent
+              ${isAdmin 
+                ? 'text-slate-300 hover:text-white hover:bg-slate-700' 
+                : 'text-slate-600 hover:text-red-600 hover:bg-red-50 hover:border-red-100'
+              }`}
+          >
+            <LogOut size={18} />
+            <span className="hidden md:inline">Logout</span>
+          </button>
+        </div>
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-8">
@@ -353,13 +408,12 @@ const Dashboard = ({ user, onLogout }) => {
         </div>
 
         {/* Stats Grid - 7 Items */}
-        {/* Adjusted grid-cols to fit 4 on top, 3 on bottom for large screens */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
           
           {/* 1. Total (Gray) */}
           <Card title="Total Orders" value={stats.total} icon={Package} colorClass="bg-slate-100 text-slate-600" />
           
-          {/* 2. Rate (Violet - NEW) */}
+          {/* 2. Rate (Violet) */}
           <Card 
             title="Confirmation Rate" 
             value={`${confirmationRate}%`} 
@@ -450,7 +504,6 @@ const Dashboard = ({ user, onLogout }) => {
                 <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-100">
                         <tr>
-                            {/* --- ADMIN ONLY COLUMN --- */}
                             {isAdmin && <th className="px-6 py-4">Subscriber</th>}
                             <th className="px-6 py-4">Order ID</th>
                             <th className="px-6 py-4">Created At</th>
@@ -461,14 +514,11 @@ const Dashboard = ({ user, onLogout }) => {
                     <tbody className="divide-y divide-slate-50">
                         {filteredData.length > 0 ? filteredData.slice(0, 100).map(order => (
                             <tr key={order.id} className="hover:bg-indigo-50/30 transition-colors">
-                                
-                                {/* --- ADMIN ONLY CELL --- */}
                                 {isAdmin && (
                                   <td className="px-6 py-4 font-semibold text-indigo-600">
                                     {order.subscriber_name}
                                   </td>
                                 )}
-
                                 <td className="px-6 py-4 font-mono text-slate-600">{order.order_id}</td>
                                 <td className="px-6 py-4 text-slate-600">
                                   {new Date(order.created_at).toLocaleDateString()}
@@ -514,14 +564,11 @@ export default function App() {
   const [error, setError] = useState('');
 
   const handleLogin = (username, password) => {
-    // 1. Admin Check
     if (username === 'admin' && password === '1234') {
       setUser('admin');
       setError('');
       return;
     }
-
-    // 2. Regular User Check
     if (password === '1234' && username.trim() !== '') {
       setUser(username);
       setError('');
