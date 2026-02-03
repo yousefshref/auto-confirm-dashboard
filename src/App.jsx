@@ -39,9 +39,9 @@ const MOCK_DATA = [
   { id: 38, subscriber_name: 'little_toes_baheer', order_id: '7499213888888', phone: '201223130888', status: 'CONFIRMED', created_at: new Date().toISOString() },
 ];
 
-// New Mock Wallets Table
+// Mock Wallets Table
 const MOCK_WALLETS = [
-  { id: 1, subscriber: 'little_toes_baheer', wallet: 45 }, // Low balance test case
+  { id: 1, subscriber: 'little_toes_baheer', wallet: 45 }, // Low balance test
   { id: 2, subscriber: 'netaq_aljamal', wallet: 1250 },
   { id: 3, subscriber: 'different_store', wallet: 500 },
 ];
@@ -126,7 +126,7 @@ const Login = ({ onLogin, error }) => {
 const Dashboard = ({ user, onLogout }) => {
   const isAdmin = user === 'admin';
   const [orders, setOrders] = useState([]);
-  const [walletBalance, setWalletBalance] = useState(null); // New State
+  const [walletBalance, setWalletBalance] = useState(null); // Wallet State
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
   
@@ -137,7 +137,7 @@ const Dashboard = ({ user, onLogout }) => {
     end: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0] 
   });
 
-  // 1. Fetch Data (Orders & Wallet)
+  // 1. Fetch Data (Orders + Wallet)
   useEffect(() => {
     const fetchAllData = async () => {
       setLoading(true);
@@ -159,6 +159,7 @@ const Dashboard = ({ user, onLogout }) => {
               .select('*')
               .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
             
+            // IF NOT ADMIN, FILTER BY SUBSCRIBER NAME
             if (!isAdmin) {
               query = query.eq('subscriber_name', user);
             }
@@ -195,14 +196,13 @@ const Dashboard = ({ user, onLogout }) => {
           console.warn("Using Mock Data");
           await new Promise(resolve => setTimeout(resolve, 800));
           
-          // Orders
           if (isAdmin) {
-             allOrders = MOCK_DATA; 
+             allOrders = MOCK_DATA; // Admin sees all
           } else {
-             allOrders = MOCK_DATA.filter(o => o.subscriber_name === user);
+             allOrders = MOCK_DATA.filter(o => o.subscriber_name === user); // User sees theirs
           }
 
-          // Wallet
+          // Mock Wallet
           const mockWalletRow = MOCK_WALLETS.find(w => w.subscriber === user);
           if (mockWalletRow) {
             walletAmount = mockWalletRow.wallet;
@@ -225,22 +225,25 @@ const Dashboard = ({ user, onLogout }) => {
     }
   }, [user, isAdmin]);
 
-  // 2. Derive Unique Subscribers (Admin Only)
+  // 2. Derive Unique Subscribers for Filter Dropdown (Admin Only)
   const uniqueSubscribers = useMemo(() => {
     if (!isAdmin) return [];
     const names = orders.map(o => o.subscriber_name);
     return [...new Set(names)].sort();
   }, [orders, isAdmin]);
 
-  // 3. Filter Data
+  // 3. Filter Data in Memory
     const filteredData = useMemo(() => {
+      // Append time to force Local Timezone parsing
       const start = new Date(dateRange.start + 'T00:00:00');
       const end = new Date(dateRange.end + 'T23:59:59.999');
 
       return orders.filter(order => {
+        // Date Filter
         const orderDate = new Date(order.created_at);
         const inDateRange = orderDate >= start && orderDate <= end;
         
+        // Subscriber Filter (Admin Only)
         const matchesSubscriber = 
           !isAdmin || 
           subscriberFilter === 'All' || 
@@ -264,7 +267,7 @@ const Dashboard = ({ user, onLogout }) => {
     }, { total: 0, pending: 0, escalated: 0, confirmed: 0, reminded: 0, cancelled: 0 });
   }, [filteredData]);
 
-  // 5. Confirmation Rate
+  // 5. Calculate Confirmation Rate
   const confirmationRate = stats.total > 0 
     ? ((stats.confirmed / stats.total) * 100).toFixed(1) 
     : '0.0';
@@ -560,17 +563,25 @@ const Dashboard = ({ user, onLogout }) => {
 };
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    // 1. Initialize state by checking LocalStorage
+    return localStorage.getItem('autoConfirmUser');
+  });
   const [error, setError] = useState('');
 
   const handleLogin = (username, password) => {
+    // Admin Check
     if (username === 'admin' && password === '1234') {
       setUser('admin');
+      localStorage.setItem('autoConfirmUser', 'admin'); // SAVE
       setError('');
       return;
     }
+
+    // Regular User Check
     if (password === '1234' && username.trim() !== '') {
       setUser(username);
+      localStorage.setItem('autoConfirmUser', username); // SAVE
       setError('');
     } else {
       setError('Invalid credentials');
@@ -579,6 +590,7 @@ export default function App() {
 
   const handleLogout = () => {
     setUser(null);
+    localStorage.removeItem('autoConfirmUser'); // CLEAR
   };
 
   return (
